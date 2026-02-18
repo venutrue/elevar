@@ -1,18 +1,22 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../config/database';
-import { authenticate } from '../middleware/auth';
-import { generateToken } from '../middleware/auth';
+import { authenticate, generateToken } from '../middleware/auth';
 
 const router = Router();
 
 // POST /register
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, first_name, last_name, phone, role } = req.body;
+    // Accept both camelCase (frontend) and snake_case formats
+    const email = req.body.email;
+    const password = req.body.password;
+    const firstName = req.body.firstName || req.body.first_name;
+    const lastName = req.body.lastName || req.body.last_name;
+    const phone = req.body.phone;
 
-    if (!email || !password || !first_name) {
-      res.status(400).json({ error: 'Email, password, and first_name are required' });
+    if (!email || !password || !firstName) {
+      res.status(400).json({ error: 'Email, password, and first name are required' });
       return;
     }
 
@@ -23,30 +27,34 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const salt = await bcrypt.genSalt(12);
-    const password_hash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(password, salt);
 
     const result = await query(
       `INSERT INTO app_users (email, password_hash, first_name, last_name, phone)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, email, first_name, last_name, phone, created_at`,
-      [email, password_hash, first_name, last_name || null, phone || null]
+      [email, passwordHash, firstName, lastName || null, phone || null]
     );
 
     const user = result.rows[0];
 
-    // Assign role
-    const userRole = role || 'tenant';
-    await query(
-      `INSERT INTO user_roles (user_id, role_name) VALUES ($1, $2)`,
-      [user.id, userRole]
-    );
+    // Default role is 'owner' (property owners are the primary users)
+    const roleCode = req.body.role || 'owner';
+    const roleResult = await query('SELECT id FROM roles WHERE code = $1', [roleCode]);
+
+    if (roleResult.rows.length > 0) {
+      await query(
+        'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
+        [user.id, roleResult.rows[0].id]
+      );
+    }
 
     const token = generateToken({
       id: user.id,
       email: user.email,
       firstName: user.first_name,
       lastName: user.last_name,
-      roles: [userRole],
+      roles: [roleCode],
     });
 
     res.status(201).json({
@@ -54,10 +62,10 @@ router.post('/register', async (req: Request, res: Response) => {
       user: {
         id: user.id,
         email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        firstName: user.first_name,
+        lastName: user.last_name,
         phone: user.phone,
-        roles: [userRole],
+        roles: [roleCode],
       },
     });
   } catch (err) {
@@ -78,9 +86,10 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const result = await query(
       `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.is_active,
-              COALESCE(array_agg(r.role_name) FILTER (WHERE r.role_name IS NOT NULL), '{}') AS roles
+              COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
        FROM app_users u
-       LEFT JOIN user_roles r ON r.user_id = u.id
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
        WHERE u.email = $1
        GROUP BY u.id`,
       [email]
@@ -104,6 +113,9 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
+    // Update last login
+    await query('UPDATE app_users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+
     const token = generateToken({
       id: user.id,
       email: user.email,
@@ -117,8 +129,8 @@ router.post('/login', async (req: Request, res: Response) => {
       user: {
         id: user.id,
         email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        firstName: user.first_name,
+        lastName: user.last_name,
         roles: user.roles,
       },
     });
@@ -132,11 +144,12 @@ router.post('/login', async (req: Request, res: Response) => {
 router.get('/me', authenticate, async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url,
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone,
               u.is_active, u.created_at, u.updated_at,
-              COALESCE(array_agg(r.role_name) FILTER (WHERE r.role_name IS NOT NULL), '{}') AS roles
+              COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
        FROM app_users u
-       LEFT JOIN user_roles r ON r.user_id = u.id
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
        WHERE u.id = $1
        GROUP BY u.id`,
       [req.user!.id]
@@ -147,7 +160,17 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(result.rows[0]);
+    const user = result.rows[0];
+    res.json({
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      phone: user.phone,
+      roles: user.roles,
+      isActive: user.is_active,
+      createdAt: user.created_at,
+    });
   } catch (err) {
     console.error('Get profile error:', err);
     res.status(500).json({ error: 'Internal server error' });

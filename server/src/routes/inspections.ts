@@ -13,11 +13,11 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status, type } = req.query;
 
     let sql = `
-      SELECT i.*, p.name AS property_name,
+      SELECT i.*, p.title AS property_name,
              u.first_name AS inspector_first_name, u.last_name AS inspector_last_name
       FROM inspections i
       JOIN properties p ON p.id = i.property_id
-      LEFT JOIN app_users u ON u.id = i.inspector_user_id
+      LEFT JOIN app_users u ON u.id = i.inspector_id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     params.push(limit);
-    sql += ` ORDER BY i.scheduled_date DESC LIMIT $${params.length}`;
+    sql += ` ORDER BY i.scheduled_at DESC LIMIT $${params.length}`;
     params.push(offset);
     sql += ` OFFSET $${params.length}`;
 
@@ -63,11 +63,11 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT i.*, p.name AS property_name,
+      `SELECT i.*, p.title AS property_name,
               u.first_name AS inspector_first_name, u.last_name AS inspector_last_name
        FROM inspections i
        JOIN properties p ON p.id = i.property_id
-       LEFT JOIN app_users u ON u.id = i.inspector_user_id
+       LEFT JOIN app_users u ON u.id = i.inspector_id
        WHERE i.id = $1`,
       [req.params.id]
     );
@@ -88,22 +88,22 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, inspection_type, scheduled_date, status,
-      inspector_user_id, notes, findings,
+      property_id, inspection_type, scheduled_at, status,
+      inspector_id, summary,
     } = req.body;
 
-    if (!property_id || !inspection_type || !scheduled_date) {
-      res.status(400).json({ error: 'property_id, inspection_type, and scheduled_date are required' });
+    if (!property_id || !inspection_type || !scheduled_at) {
+      res.status(400).json({ error: 'property_id, inspection_type, and scheduled_at are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO inspections (property_id, inspection_type, scheduled_date, status, inspector_user_id, notes, findings, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO inspections (property_id, inspection_type, scheduled_at, status, inspector_id, summary)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
-        property_id, inspection_type, scheduled_date, status || 'scheduled',
-        inspector_user_id || null, notes || null, findings || null, req.user!.id,
+        property_id, inspection_type, scheduled_at, status || 'scheduled',
+        inspector_id || null, summary || null,
       ]
     );
 
@@ -118,24 +118,23 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      inspection_type, scheduled_date, completed_date, status,
-      inspector_user_id, notes, findings, rating,
+      inspection_type, scheduled_at, completed_at, status,
+      inspector_id, summary, risk_level,
     } = req.body;
 
     const result = await query(
       `UPDATE inspections
        SET inspection_type = COALESCE($1, inspection_type),
-           scheduled_date = COALESCE($2, scheduled_date),
-           completed_date = COALESCE($3, completed_date),
+           scheduled_at = COALESCE($2, scheduled_at),
+           completed_at = COALESCE($3, completed_at),
            status = COALESCE($4, status),
-           inspector_user_id = COALESCE($5, inspector_user_id),
-           notes = COALESCE($6, notes),
-           findings = COALESCE($7, findings),
-           rating = COALESCE($8, rating),
+           inspector_id = COALESCE($5, inspector_id),
+           summary = COALESCE($6, summary),
+           risk_level = COALESCE($7, risk_level),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $8
        RETURNING *`,
-      [inspection_type, scheduled_date, completed_date, status, inspector_user_id, notes, findings, rating, req.params.id]
+      [inspection_type, scheduled_at, completed_at, status, inspector_id, summary, risk_level, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -190,18 +189,18 @@ router.get('/:id/media', async (req: Request, res: Response) => {
 // POST /:id/media - add media to an inspection
 router.post('/:id/media', async (req: Request, res: Response) => {
   try {
-    const { file_url, file_type, caption, room, metadata } = req.body;
+    const { storage_key, media_type, caption, captured_at, latitude, longitude } = req.body;
 
-    if (!file_url) {
-      res.status(400).json({ error: 'file_url is required' });
+    if (!storage_key) {
+      res.status(400).json({ error: 'storage_key is required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO inspection_media (inspection_id, file_url, file_type, caption, room, metadata, uploaded_by)
+      `INSERT INTO inspection_media (inspection_id, storage_key, media_type, caption, captured_at, latitude, longitude)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.params.id, file_url, file_type || 'image', caption || null, room || null, metadata ? JSON.stringify(metadata) : null, req.user!.id]
+      [req.params.id, storage_key, media_type || 'photo', caption || null, captured_at || null, latitude || null, longitude || null]
     );
 
     res.status(201).json(result.rows[0]);

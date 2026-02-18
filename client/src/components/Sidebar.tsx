@@ -167,7 +167,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   {user.firstName} {user.lastName}
                 </p>
                 <p className="text-xs text-gray-500 capitalize truncate">
-                  {user.role || 'User'}
+                  {user.roles?.[0] || 'User'}
                 </p>
               </div>
             )}

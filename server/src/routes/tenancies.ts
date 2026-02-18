@@ -10,15 +10,15 @@ router.use(authenticate);
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { limit, offset } = paginate(req);
-    const { property_id, status } = req.query;
+    const { property_id, agreement_status } = req.query;
 
     let sql = `
       SELECT t.*,
-             p.name AS property_name,
-             u.first_name AS tenant_first_name, u.last_name AS tenant_last_name, u.email AS tenant_email
+             p.title AS property_name,
+             tn.full_name AS tenant_name, tn.email AS tenant_email, tn.phone AS tenant_phone
       FROM tenancies t
       JOIN properties p ON p.id = t.property_id
-      JOIN app_users u ON u.id = t.tenant_user_id
+      JOIN tenants tn ON tn.id = t.tenant_id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -27,9 +27,9 @@ router.get('/', async (req: Request, res: Response) => {
       params.push(property_id);
       sql += ` AND t.property_id = $${params.length}`;
     }
-    if (status) {
-      params.push(status);
-      sql += ` AND t.status = $${params.length}`;
+    if (agreement_status) {
+      params.push(agreement_status);
+      sql += ` AND t.agreement_status = $${params.length}`;
     }
 
     const countResult = await query(
@@ -61,11 +61,11 @@ router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
       `SELECT t.*,
-              p.name AS property_name,
-              u.first_name AS tenant_first_name, u.last_name AS tenant_last_name, u.email AS tenant_email
+              p.title AS property_name,
+              tn.full_name AS tenant_name, tn.email AS tenant_email, tn.phone AS tenant_phone
        FROM tenancies t
        JOIN properties p ON p.id = t.property_id
-       JOIN app_users u ON u.id = t.tenant_user_id
+       JOIN tenants tn ON tn.id = t.tenant_id
        WHERE t.id = $1`,
       [req.params.id]
     );
@@ -86,22 +86,22 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, tenant_user_id, lease_start, lease_end,
-      rent_amount, rent_frequency, security_deposit, status,
+      property_id, tenant_id, lease_start, lease_end,
+      monthly_rent, security_deposit, payment_day_of_month, agreement_status,
     } = req.body;
 
-    if (!property_id || !tenant_user_id || !lease_start || !rent_amount) {
-      res.status(400).json({ error: 'property_id, tenant_user_id, lease_start, and rent_amount are required' });
+    if (!property_id || !tenant_id || !lease_start || !monthly_rent) {
+      res.status(400).json({ error: 'property_id, tenant_id, lease_start, and monthly_rent are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO tenancies (property_id, tenant_user_id, lease_start, lease_end, rent_amount, rent_frequency, security_deposit, status)
+      `INSERT INTO tenancies (property_id, tenant_id, lease_start, lease_end, monthly_rent, security_deposit, payment_day_of_month, agreement_status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        property_id, tenant_user_id, lease_start, lease_end || null,
-        rent_amount, rent_frequency || 'monthly', security_deposit || 0, status || 'active',
+        property_id, tenant_id, lease_start, lease_end || null,
+        monthly_rent, security_deposit || null, payment_day_of_month || null, agreement_status || 'active',
       ]
     );
 
@@ -115,20 +115,20 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT /:id - update tenancy
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { lease_start, lease_end, rent_amount, rent_frequency, security_deposit, status } = req.body;
+    const { lease_start, lease_end, monthly_rent, security_deposit, payment_day_of_month, agreement_status } = req.body;
 
     const result = await query(
       `UPDATE tenancies
        SET lease_start = COALESCE($1, lease_start),
            lease_end = COALESCE($2, lease_end),
-           rent_amount = COALESCE($3, rent_amount),
-           rent_frequency = COALESCE($4, rent_frequency),
-           security_deposit = COALESCE($5, security_deposit),
-           status = COALESCE($6, status),
+           monthly_rent = COALESCE($3, monthly_rent),
+           security_deposit = COALESCE($4, security_deposit),
+           payment_day_of_month = COALESCE($5, payment_day_of_month),
+           agreement_status = COALESCE($6, agreement_status),
            updated_at = NOW()
        WHERE id = $7
        RETURNING *`,
-      [lease_start, lease_end, rent_amount, rent_frequency, security_deposit, status, req.params.id]
+      [lease_start, lease_end, monthly_rent, security_deposit, payment_day_of_month, agreement_status, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -186,18 +186,18 @@ router.get('/:id/payments', async (req: Request, res: Response) => {
 // POST /:id/payments - create rent payment
 router.post('/:id/payments', async (req: Request, res: Response) => {
   try {
-    const { amount, due_date, paid_date, payment_method, status, reference_number } = req.body;
+    const { amount_due, due_date, paid_on, amount_paid, payment_status, reference_number } = req.body;
 
-    if (!amount || !due_date) {
-      res.status(400).json({ error: 'amount and due_date are required' });
+    if (!amount_due || !due_date) {
+      res.status(400).json({ error: 'amount_due and due_date are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO rent_payments (tenancy_id, amount, due_date, paid_date, payment_method, status, reference_number)
+      `INSERT INTO rent_payments (tenancy_id, amount_due, due_date, amount_paid, paid_on, payment_status, reference_number)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.params.id, amount, due_date, paid_date || null, payment_method || null, status || 'pending', reference_number || null]
+      [req.params.id, amount_due, due_date, amount_paid || 0, paid_on || null, payment_status || 'due', reference_number || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -210,20 +210,20 @@ router.post('/:id/payments', async (req: Request, res: Response) => {
 // PUT /payments/:paymentId - update rent payment
 router.put('/payments/:paymentId', async (req: Request, res: Response) => {
   try {
-    const { amount, due_date, paid_date, payment_method, status, reference_number } = req.body;
+    const { amount_due, due_date, amount_paid, paid_on, payment_status, reference_number } = req.body;
 
     const result = await query(
       `UPDATE rent_payments
-       SET amount = COALESCE($1, amount),
+       SET amount_due = COALESCE($1, amount_due),
            due_date = COALESCE($2, due_date),
-           paid_date = COALESCE($3, paid_date),
-           payment_method = COALESCE($4, payment_method),
-           status = COALESCE($5, status),
+           amount_paid = COALESCE($3, amount_paid),
+           paid_on = COALESCE($4, paid_on),
+           payment_status = COALESCE($5, payment_status),
            reference_number = COALESCE($6, reference_number),
            updated_at = NOW()
        WHERE id = $7
        RETURNING *`,
-      [amount, due_date, paid_date, payment_method, status, reference_number, req.params.paymentId]
+      [amount_due, due_date, amount_paid, paid_on, payment_status, reference_number, req.params.paymentId]
     );
 
     if (result.rows.length === 0) {

@@ -13,11 +13,11 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status, priority } = req.query;
 
     let sql = `
-      SELECT mr.*, p.name AS property_name,
+      SELECT mr.*, p.title AS property_name,
              u.first_name AS requester_first_name, u.last_name AS requester_last_name
       FROM maintenance_requests mr
       LEFT JOIN properties p ON p.id = mr.property_id
-      LEFT JOIN app_users u ON u.id = mr.requested_by
+      LEFT JOIN app_users u ON u.id = mr.raised_by
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -63,11 +63,11 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT mr.*, p.name AS property_name,
+      `SELECT mr.*, p.title AS property_name,
               u.first_name AS requester_first_name, u.last_name AS requester_last_name
        FROM maintenance_requests mr
        LEFT JOIN properties p ON p.id = mr.property_id
-       LEFT JOIN app_users u ON u.id = mr.requested_by
+       LEFT JOIN app_users u ON u.id = mr.raised_by
        WHERE mr.id = $1`,
       [req.params.id]
     );
@@ -88,23 +88,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, title, description, category, priority,
+      property_id, description, request_type, priority,
       status, assigned_to, estimated_cost,
     } = req.body;
 
-    if (!property_id || !title) {
-      res.status(400).json({ error: 'property_id and title are required' });
+    if (!property_id || !description) {
+      res.status(400).json({ error: 'property_id and description are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO maintenance_requests (property_id, title, description, category, priority, status, assigned_to, estimated_cost, requested_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO maintenance_requests (property_id, description, request_type, priority, status, assigned_to, estimated_cost, raised_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        property_id, title, description || null, category || null,
-        priority || 'medium', status || 'open', assigned_to || null,
-        estimated_cost || null, req.user!.id,
+        property_id, description, request_type, priority || 'medium',
+        status || 'open', assigned_to || null, estimated_cost || null,
+        req.user!.id,
       ]
     );
 
@@ -119,28 +119,26 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      title, description, category, priority, status,
-      assigned_to, estimated_cost, actual_cost, completed_date, resolution_notes,
+      description, request_type, priority, status,
+      assigned_to, estimated_cost, actual_cost, closed_at,
     } = req.body;
 
     const result = await query(
       `UPDATE maintenance_requests
-       SET title = COALESCE($1, title),
-           description = COALESCE($2, description),
-           category = COALESCE($3, category),
-           priority = COALESCE($4, priority),
-           status = COALESCE($5, status),
-           assigned_to = COALESCE($6, assigned_to),
-           estimated_cost = COALESCE($7, estimated_cost),
-           actual_cost = COALESCE($8, actual_cost),
-           completed_date = COALESCE($9, completed_date),
-           resolution_notes = COALESCE($10, resolution_notes),
+       SET description = COALESCE($1, description),
+           request_type = COALESCE($2, request_type),
+           priority = COALESCE($3, priority),
+           status = COALESCE($4, status),
+           assigned_to = COALESCE($5, assigned_to),
+           estimated_cost = COALESCE($6, estimated_cost),
+           actual_cost = COALESCE($7, actual_cost),
+           closed_at = COALESCE($8, closed_at),
            updated_at = NOW()
-       WHERE id = $11
+       WHERE id = $9
        RETURNING *`,
       [
-        title, description, category, priority, status,
-        assigned_to, estimated_cost, actual_cost, completed_date, resolution_notes,
+        description, request_type, priority, status,
+        assigned_to, estimated_cost, actual_cost, closed_at,
         req.params.id,
       ]
     );

@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status, case_type } = req.query;
 
     let sql = `
-      SELECT lc.*, p.name AS property_name
+      SELECT lc.*, p.title AS property_name
       FROM legal_cases lc
       LEFT JOIN properties p ON p.id = lc.property_id
       WHERE 1=1
@@ -61,7 +61,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT lc.*, p.name AS property_name
+      `SELECT lc.*, p.title AS property_name
        FROM legal_cases lc
        LEFT JOIN properties p ON p.id = lc.property_id
        WHERE lc.id = $1`,
@@ -84,23 +84,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, case_type, title, description, status,
-      priority, assigned_to, court_reference, filing_date,
+      property_id, case_type, summary, details, status,
+      priority, assigned_to, case_number,
     } = req.body;
 
-    if (!title || !case_type) {
-      res.status(400).json({ error: 'title and case_type are required' });
+    if (!summary || !case_type) {
+      res.status(400).json({ error: 'summary and case_type are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO legal_cases (property_id, case_type, title, description, status, priority, assigned_to, court_reference, filing_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO legal_cases (property_id, case_type, summary, details, status, priority, assigned_to, case_number, opened_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
-        property_id || null, case_type, title, description || null,
+        property_id || null, case_type, summary, details || null,
         status || 'open', priority || 'medium', assigned_to || null,
-        court_reference || null, filing_date || null, req.user!.id,
+        case_number || null, req.user!.id,
       ]
     );
 
@@ -115,28 +115,26 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      case_type, title, description, status, priority,
-      assigned_to, court_reference, filing_date, resolution_date, resolution_notes,
+      case_type, summary, details, status, priority,
+      assigned_to, case_number, closed_at,
     } = req.body;
 
     const result = await query(
       `UPDATE legal_cases
        SET case_type = COALESCE($1, case_type),
-           title = COALESCE($2, title),
-           description = COALESCE($3, description),
+           summary = COALESCE($2, summary),
+           details = COALESCE($3, details),
            status = COALESCE($4, status),
            priority = COALESCE($5, priority),
            assigned_to = COALESCE($6, assigned_to),
-           court_reference = COALESCE($7, court_reference),
-           filing_date = COALESCE($8, filing_date),
-           resolution_date = COALESCE($9, resolution_date),
-           resolution_notes = COALESCE($10, resolution_notes),
+           case_number = COALESCE($7, case_number),
+           closed_at = COALESCE($8, closed_at),
            updated_at = NOW()
-       WHERE id = $11
+       WHERE id = $9
        RETURNING *`,
       [
-        case_type, title, description, status, priority,
-        assigned_to, court_reference, filing_date, resolution_date, resolution_notes,
+        case_type, summary, details, status, priority,
+        assigned_to, case_number, closed_at,
         req.params.id,
       ]
     );
@@ -180,8 +178,8 @@ router.get('/:id/updates', async (req: Request, res: Response) => {
 
     const result = await query(
       `SELECT cu.*, u.first_name, u.last_name
-       FROM case_updates cu
-       LEFT JOIN app_users u ON u.id = cu.created_by
+       FROM legal_case_updates cu
+       LEFT JOIN app_users u ON u.id = cu.author_id
        WHERE cu.legal_case_id = $1
        ORDER BY cu.created_at DESC
        LIMIT $2 OFFSET $3`,
@@ -198,7 +196,7 @@ router.get('/:id/updates', async (req: Request, res: Response) => {
 // POST /:id/updates - create case update
 router.post('/:id/updates', async (req: Request, res: Response) => {
   try {
-    const { update_type, content, metadata } = req.body;
+    const { update_type, content, is_visible_to_owner } = req.body;
 
     if (!content) {
       res.status(400).json({ error: 'content is required' });
@@ -206,10 +204,10 @@ router.post('/:id/updates', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO case_updates (legal_case_id, update_type, content, metadata, created_by)
+      `INSERT INTO legal_case_updates (legal_case_id, update_type, content, is_visible_to_owner, author_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [req.params.id, update_type || 'note', content, metadata ? JSON.stringify(metadata) : null, req.user!.id]
+      [req.params.id, update_type || 'note', content, is_visible_to_owner !== false, req.user!.id]
     );
 
     res.status(201).json(result.rows[0]);

@@ -13,8 +13,8 @@ interface User {
   email: string;
   firstName: string;
   lastName: string;
-  role: string;
-  firmId?: string;
+  roles: string[];
+  phone?: string;
 }
 
 interface RegisterData {
