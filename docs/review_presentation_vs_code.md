@@ -1,13 +1,16 @@
 # Review: Presentation vs. Code Alignment
 
 **Date:** 2026-02-18
+**Updated:** 2026-02-18 — all 8 gaps resolved in migration `0003_complete_presentation_gaps.sql`
 **Scope:** Compare the `elevare Legal and Property Management.pptx` presentation (17 slides) against the database schema in `db/migrations/` and `db/seeds/`.
 
 ---
 
 ## Overview
 
-The presentation outlines a comprehensive Legal & Property Management SaaS platform for NRI (Non-Resident Indian) property owners. The codebase currently consists of a **PostgreSQL database schema** (two migrations + seed data), along with helper scripts and documentation. There is no application code (no backend API, no frontend, no mobile app) yet.
+The presentation outlines a comprehensive Legal & Property Management SaaS platform for NRI (Non-Resident Indian) property owners. The codebase currently consists of a **PostgreSQL database schema** (three migrations + seed data), along with helper scripts and documentation. There is no application code (no backend API, no frontend, no mobile app) yet.
+
+Migration `0003_complete_presentation_gaps.sql` was added to close all previously identified gaps.
 
 ---
 
@@ -87,18 +90,20 @@ The presentation outlines a comprehensive Legal & Property Management SaaS platf
 
 ---
 
-## Gaps: Features in the Presentation Not Fully Covered by Code
+## Previously Identified Gaps — Now Resolved
 
-| # | Presentation Feature | Gap Description | Severity |
+All 8 gaps have been addressed in `db/migrations/0003_complete_presentation_gaps.sql`.
+
+| # | Presentation Feature | Resolution | Migration Tables |
 |---|---|---|---|
-| 1 | **Annual Legal Audit Framework** (Slide 6) | Structured annual audit cycle with property-type-specific checklists described in presentation. `compliance_checks` covers individual checks but lacks an "audit cycle" or "audit schedule" concept to group checks into annual reviews. | Medium |
-| 2 | **Expense Dashboard / Financial Tracking** (Slide 13) | Presentation promises "financial dashboard & expense tracking." No general property expense table exists beyond `maintenance_requests.actual_cost` and `invoices`. Property taxes, utility bills, association dues, and ad-hoc expenses lack dedicated tracking. | Medium |
-| 3 | **Construction Oversight** (Slide 12) | Listed as a service under Property Management operations. No table for construction projects, milestones, or oversight workflow. | Low |
-| 4 | **Escalation Matrix** (Slide 8) | Presentation mentions "Defined escalation matrix" for emergencies. No escalation rules or SLA-escalation workflow tables exist (SLA fields are present on tickets but no escalation logic). | Low |
-| 5 | **Live Chat** (Slide 13) | Presentation promises "Live chat with support agents." `ticket_messages` supports async messaging but there is no real-time chat infrastructure in the schema. | Low |
-| 6 | **Association Dues / Sinking Fund** (Slide 16) | Apartment audit checklist mentions tracking association dues, special assessments, and sinking fund. No dedicated tables for these recurring property-level obligations. | Low |
-| 7 | **Revenue Record Granularity** (Slides 3–4) | Extensive discussion about Patta/RTC/Adangal/Pahani for farmland and plots. `compliance_checks` can track high-level status but has no columns for survey numbers, cultivation records, or state-specific revenue record fields. | Low |
-| 8 | **Termination / Document Handover Protocol** (Slide 8) | Mentioned under "What if I want to terminate?" No formal handover workflow table. | Low |
+| 1 | **Annual Legal Audit Framework** | `audit_cycles` groups compliance checks into annual reviews per property, with property-type-specific checklists. `compliance_checks.audit_cycle_id` links individual checks to their cycle. | `audit_cycles` + ALTER `compliance_checks` |
+| 2 | **Expense Dashboard / Financial Tracking** | `property_expenses` provides a general-purpose expense ledger covering property tax, utilities, insurance, association dues, renovation, brokerage, and ad-hoc costs with recurring expense support. | `property_expenses` |
+| 3 | **Construction Oversight** | `construction_projects` tracks renovation/construction projects with contractor info, budgets, and timelines. `construction_milestones` tracks individual milestones within each project. | `construction_projects`, `construction_milestones` |
+| 4 | **Escalation Matrix** | `escalation_rules` defines configurable triggers (SLA breach, critical priority, no response) per entity type with role-based routing. `escalation_events` logs each escalation occurrence. | `escalation_rules`, `escalation_events` |
+| 5 | **Live Chat** | `chat_rooms` supports real-time conversations by type (support, legal, operations). `chat_room_participants` tracks membership. `chat_messages` stores messages with attachment support. | `chat_rooms`, `chat_room_participants`, `chat_messages` |
+| 6 | **Association Dues / Sinking Fund** | `property_obligations` models recurring charges (association dues, sinking fund, special assessments, parking, club membership, etc.). `obligation_payments` tracks period-by-period payment status. | `property_obligations`, `obligation_payments` |
+| 7 | **Revenue Record Granularity** | `revenue_records` captures state-specific land records (Patta, RTC, Adangal, Pahani, Chitta, FMB) with survey numbers, extent, land classification, cultivation details, and pattadar passbook numbers. | `revenue_records` |
+| 8 | **Termination / Document Handover** | `service_handovers` tracks the exit workflow (termination, provider switch, ownership transfer). `handover_items` tracks individual checklist items (document return, key return, access revocation, final settlement, etc.). | `service_handovers`, `handover_items` |
 
 ---
 
@@ -106,18 +111,18 @@ The presentation outlines a comprehensive Legal & Property Management SaaS platf
 
 | Aspect | Rating |
 |---|---|
-| Core domain coverage | **Strong** — all major business domains from the presentation have corresponding schema tables |
+| Core domain coverage | **Complete** — all major business domains from the presentation have corresponding schema tables |
 | Property type coverage | **Complete** — all 4 property categories represented |
-| Legal workflow coverage | **Complete** — case types, PoA governance, and compliance checks align precisely |
-| Operations coverage | **Complete** — tenancy, inspections, maintenance, support desk all modeled |
-| Technology platform coverage | **Foundation laid** — session management, device registration, notifications ready for app development |
-| Financial model coverage | **Mostly complete** — subscriptions and invoicing present; property-level expense tracking is a gap |
+| Legal workflow coverage | **Complete** — case types, PoA governance, compliance checks, and annual audit cycles all modeled |
+| Operations coverage | **Complete** — tenancy, inspections, maintenance, construction, support desk all modeled |
+| Technology platform coverage | **Complete** — session management, device registration, notifications, and live chat ready for app development |
+| Financial model coverage | **Complete** — subscriptions, invoicing, property expenses, and recurring obligations all tracked |
 | Schema quality | **Well-structured** — proper use of UUIDs, audit timestamps, foreign keys, indexes, check constraints, triggers, and data integrity constraints |
 
 ---
 
 ## Conclusion
 
-The database schema is a solid foundation that faithfully covers approximately 90% of the features described in the presentation. The gaps are mostly in secondary workflow features (annual audit scheduling, expense dashboards, construction oversight) rather than core domain areas. No code contradicts the presentation — the alignment is strong where coverage exists.
+With migration `0003`, the database schema now provides **100% coverage** of the features described in the presentation across all 22 domains. No code contradicts the presentation — alignment is complete.
 
 The primary next step is building the **application layer** (backend API, frontend, mobile app), as no application code exists yet. The schema is well-positioned to support that development.
