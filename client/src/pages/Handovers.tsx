@@ -69,8 +69,16 @@ interface Property {
 
 // ---- Constants ----
 
-const HANDOVER_TYPES = ['property_management', 'tenant_move_in', 'tenant_move_out', 'ownership_transfer', 'contractor', 'other'];
-const HANDOVER_STATUSES = ['initiated', 'in_progress', 'pending_review', 'completed', 'cancelled'];
+const HANDOVER_TYPE_OPTIONS = [
+  { value: 'property_management', label: 'Property Management' }, { value: 'tenant_move_in', label: 'Tenant Move In' },
+  { value: 'tenant_move_out', label: 'Tenant Move Out' }, { value: 'ownership_transfer', label: 'Ownership Transfer' },
+  { value: 'contractor', label: 'Contractor' }, { value: 'other', label: 'Other' },
+];
+const HANDOVER_STATUS_FILTER = [
+  { value: '', label: 'All Statuses' }, { value: 'initiated', label: 'Initiated' },
+  { value: 'in_progress', label: 'In Progress' }, { value: 'pending_review', label: 'Pending Review' },
+  { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
+];
 
 function formatDate(d: string | null): string {
   if (!d) return '-';
@@ -192,12 +200,7 @@ export default function Handovers() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-              <option value="">All Statuses</option>
-              {HANDOVER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none">{HANDOVER_STATUS_FILTER.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
           </div>
         </CardContent>
       </Card>

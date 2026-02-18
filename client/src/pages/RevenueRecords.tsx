@@ -59,8 +59,26 @@ interface Property {
 
 // ---- Constants ----
 
-const RECORD_TYPES = ['patta', 'chitta', 'adangal', 'fmb', 'encumbrance_certificate', 'khata', 'mutation', 'rr', 'pahani', 'other'];
-const STATES = ['Andhra Pradesh', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Kerala', 'Maharashtra', 'Gujarat', 'Rajasthan', 'Uttar Pradesh', 'Other'];
+const RECORD_TYPE_OPTIONS = [
+  { value: 'patta', label: 'Patta' }, { value: 'chitta', label: 'Chitta' }, { value: 'adangal', label: 'Adangal' },
+  { value: 'fmb', label: 'Fmb' }, { value: 'encumbrance_certificate', label: 'Encumbrance Certificate' },
+  { value: 'khata', label: 'Khata' }, { value: 'mutation', label: 'Mutation' }, { value: 'rr', label: 'Rr' },
+  { value: 'pahani', label: 'Pahani' }, { value: 'other', label: 'Other' },
+];
+const RECORD_TYPE_FILTER = [{ value: '', label: 'All Record Types' }, ...RECORD_TYPE_OPTIONS];
+const STATE_OPTIONS = [
+  { value: 'Andhra Pradesh', label: 'Andhra Pradesh' }, { value: 'Karnataka', label: 'Karnataka' },
+  { value: 'Tamil Nadu', label: 'Tamil Nadu' }, { value: 'Telangana', label: 'Telangana' },
+  { value: 'Kerala', label: 'Kerala' }, { value: 'Maharashtra', label: 'Maharashtra' },
+  { value: 'Gujarat', label: 'Gujarat' }, { value: 'Rajasthan', label: 'Rajasthan' },
+  { value: 'Uttar Pradesh', label: 'Uttar Pradesh' }, { value: 'Other', label: 'Other' },
+];
+const STATE_FILTER = [{ value: '', label: 'All States' }, ...STATE_OPTIONS];
+const EXTENT_UNIT_OPTIONS = [
+  { value: 'acres', label: 'Acres' }, { value: 'hectares', label: 'Hectares' },
+  { value: 'cents', label: 'Cents' }, { value: 'guntas', label: 'Guntas' },
+  { value: 'sq_ft', label: 'Sq. Ft.' }, { value: 'sq_m', label: 'Sq. M.' },
+];
 
 function recordTypeColor(type: string): 'blue' | 'green' | 'purple' | 'orange' | 'indigo' | 'yellow' | 'red' | 'gray' {
   const map: Record<string, 'blue' | 'green' | 'purple' | 'orange' | 'indigo' | 'yellow' | 'red' | 'gray'> = {
@@ -211,18 +229,8 @@ export default function RevenueRecords() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <Select value={filterRecordType} onChange={(e) => setFilterRecordType(e.target.value)}>
-              <option value="">All Record Types</option>
-              {RECORD_TYPES.map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
-            <Select value={filterState} onChange={(e) => setFilterState(e.target.value)}>
-              <option value="">All States</option>
-              {STATES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </Select>
+            <select value={filterRecordType} onChange={(e) => setFilterRecordType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none">{RECORD_TYPE_FILTER.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+            <select value={filterState} onChange={(e) => setFilterState(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none">{STATE_FILTER.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
           </div>
         </CardContent>
       </Card>
@@ -305,31 +313,22 @@ export default function RevenueRecords() {
               label="Property"
               value={form.property_id}
               onChange={(e) => setForm({ ...form, property_id: e.target.value })}
-            >
-              <option value="">Select a property</option>
-              {(properties?.data || []).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </Select>
+              options={(properties?.data || []).map((p) => ({ value: p.id, label: p.name }))}
+              placeholder="Select a property"
+            />
             <Select
               label="Record Type"
               value={form.record_type}
               onChange={(e) => setForm({ ...form, record_type: e.target.value })}
-            >
-              {RECORD_TYPES.map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
+              options={RECORD_TYPE_OPTIONS}
+            />
           </div>
           <Select
             label="State"
             value={form.state}
             onChange={(e) => setForm({ ...form, state: e.target.value })}
-          >
-            {STATES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </Select>
+            options={STATE_OPTIONS}
+          />
           <div className="grid grid-cols-3 gap-4">
             <Input
               label="District"
@@ -381,14 +380,8 @@ export default function RevenueRecords() {
               label="Extent Unit"
               value={form.extent_unit}
               onChange={(e) => setForm({ ...form, extent_unit: e.target.value })}
-            >
-              <option value="acres">Acres</option>
-              <option value="hectares">Hectares</option>
-              <option value="cents">Cents</option>
-              <option value="guntas">Guntas</option>
-              <option value="sq_ft">Sq. Ft.</option>
-              <option value="sq_m">Sq. M.</option>
-            </Select>
+              options={EXTENT_UNIT_OPTIONS}
+            />
             <Input
               label="Classification"
               placeholder="e.g., Wet, Dry, Garden"
