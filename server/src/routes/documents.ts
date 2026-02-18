@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, document_type } = req.query;
 
     let sql = `
-      SELECT d.*, p.name AS property_name,
+      SELECT d.*, p.title AS property_title,
              u.first_name AS uploader_first_name, u.last_name AS uploader_last_name
       FROM documents d
       LEFT JOIN properties p ON p.id = d.property_id
@@ -59,7 +59,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT d.*, p.name AS property_name,
+      `SELECT d.*, p.title AS property_title,
               u.first_name AS uploader_first_name, u.last_name AS uploader_last_name
        FROM documents d
        LEFT JOIN properties p ON p.id = d.property_id
@@ -84,23 +84,25 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, document_type, title, description,
-      file_url, file_name, file_size, mime_type, expiry_date,
+      property_id, owner_id, document_type, title,
+      storage_key, mime_type, file_size_bytes,
+      checksum_sha256, is_sensitive, expires_on,
     } = req.body;
 
-    if (!title || !file_url) {
-      res.status(400).json({ error: 'title and file_url are required' });
+    if (!title || !storage_key) {
+      res.status(400).json({ error: 'title and storage_key are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO documents (property_id, document_type, title, description, file_url, file_name, file_size, mime_type, expiry_date, uploaded_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO documents (property_id, owner_id, uploaded_by, document_type, title, storage_key, mime_type, file_size_bytes, checksum_sha256, is_sensitive, expires_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
-        property_id || null, document_type || 'general', title, description || null,
-        file_url, file_name || null, file_size || null, mime_type || null,
-        expiry_date || null, req.user!.id,
+        property_id || null, owner_id || null, req.user!.id,
+        document_type || 'other', title, storage_key,
+        mime_type || null, file_size_bytes || null,
+        checksum_sha256 || null, is_sensitive || false, expires_on || null,
       ]
     );
 
@@ -115,24 +117,26 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      document_type, title, description, file_url,
-      file_name, file_size, mime_type, expiry_date,
+      document_type, title, storage_key,
+      mime_type, file_size_bytes, checksum_sha256,
+      is_sensitive, expires_on, owner_id,
     } = req.body;
 
     const result = await query(
       `UPDATE documents
        SET document_type = COALESCE($1, document_type),
            title = COALESCE($2, title),
-           description = COALESCE($3, description),
-           file_url = COALESCE($4, file_url),
-           file_name = COALESCE($5, file_name),
-           file_size = COALESCE($6, file_size),
-           mime_type = COALESCE($7, mime_type),
-           expiry_date = COALESCE($8, expiry_date),
+           storage_key = COALESCE($3, storage_key),
+           mime_type = COALESCE($4, mime_type),
+           file_size_bytes = COALESCE($5, file_size_bytes),
+           checksum_sha256 = COALESCE($6, checksum_sha256),
+           is_sensitive = COALESCE($7, is_sensitive),
+           expires_on = COALESCE($8, expires_on),
+           owner_id = COALESCE($9, owner_id),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $10
        RETURNING *`,
-      [document_type, title, description, file_url, file_name, file_size, mime_type, expiry_date, req.params.id]
+      [document_type, title, storage_key, mime_type, file_size_bytes, checksum_sha256, is_sensitive, expires_on, owner_id, req.params.id]
     );
 
     if (result.rows.length === 0) {

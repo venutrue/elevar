@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, record_type, state_code } = req.query;
 
     let sql = `
-      SELECT rr.*, p.name AS property_name
+      SELECT rr.*, p.title AS property_title
       FROM revenue_records rr
       LEFT JOIN properties p ON p.id = rr.property_id
       WHERE 1=1
@@ -39,7 +39,7 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     params.push(limit);
-    sql += ` ORDER BY rr.record_date DESC LIMIT $${params.length}`;
+    sql += ` ORDER BY rr.created_at DESC LIMIT $${params.length}`;
     params.push(offset);
     sql += ` OFFSET $${params.length}`;
 
@@ -61,7 +61,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT rr.*, p.name AS property_name
+      `SELECT rr.*, p.title AS property_title
        FROM revenue_records rr
        LEFT JOIN properties p ON p.id = rr.property_id
        WHERE rr.id = $1`,
@@ -84,24 +84,29 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, record_type, description, amount,
-      record_date, state_code, reference_number, metadata,
+      property_id, record_type, state_code, district, taluk,
+      village, survey_number, sub_division, extent_acres,
+      extent_hectares, land_classification, current_holder_name,
+      cultivation_details, pattadar_passbook_number,
+      last_verified_on, document_id, notes,
     } = req.body;
 
-    if (!property_id || !record_type || !amount) {
-      res.status(400).json({ error: 'property_id, record_type, and amount are required' });
+    if (!property_id || !record_type) {
+      res.status(400).json({ error: 'property_id and record_type are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO revenue_records (property_id, record_type, description, amount, record_date, state_code, reference_number, metadata, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO revenue_records (property_id, record_type, state_code, district, taluk, village, survey_number, sub_division, extent_acres, extent_hectares, land_classification, current_holder_name, cultivation_details, pattadar_passbook_number, last_verified_on, document_id, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
-        property_id, record_type, description || null, amount,
-        record_date || new Date().toISOString().split('T')[0],
-        state_code || null, reference_number || null,
-        metadata ? JSON.stringify(metadata) : null, req.user!.id,
+        property_id, record_type, state_code || null, district || null,
+        taluk || null, village || null, survey_number || null,
+        sub_division || null, extent_acres || null, extent_hectares || null,
+        land_classification || null, current_holder_name || null,
+        cultivation_details || null, pattadar_passbook_number || null,
+        last_verified_on || null, document_id || null, notes || null,
       ]
     );
 
@@ -116,23 +121,40 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      record_type, description, amount, record_date,
-      state_code, reference_number, metadata,
+      record_type, state_code, district, taluk, village,
+      survey_number, sub_division, extent_acres, extent_hectares,
+      land_classification, current_holder_name, cultivation_details,
+      pattadar_passbook_number, last_verified_on, document_id, notes,
     } = req.body;
 
     const result = await query(
       `UPDATE revenue_records
        SET record_type = COALESCE($1, record_type),
-           description = COALESCE($2, description),
-           amount = COALESCE($3, amount),
-           record_date = COALESCE($4, record_date),
-           state_code = COALESCE($5, state_code),
-           reference_number = COALESCE($6, reference_number),
-           metadata = COALESCE($7, metadata),
+           state_code = COALESCE($2, state_code),
+           district = COALESCE($3, district),
+           taluk = COALESCE($4, taluk),
+           village = COALESCE($5, village),
+           survey_number = COALESCE($6, survey_number),
+           sub_division = COALESCE($7, sub_division),
+           extent_acres = COALESCE($8, extent_acres),
+           extent_hectares = COALESCE($9, extent_hectares),
+           land_classification = COALESCE($10, land_classification),
+           current_holder_name = COALESCE($11, current_holder_name),
+           cultivation_details = COALESCE($12, cultivation_details),
+           pattadar_passbook_number = COALESCE($13, pattadar_passbook_number),
+           last_verified_on = COALESCE($14, last_verified_on),
+           document_id = COALESCE($15, document_id),
+           notes = COALESCE($16, notes),
            updated_at = NOW()
-       WHERE id = $8
+       WHERE id = $17
        RETURNING *`,
-      [record_type, description, amount, record_date, state_code, reference_number, metadata ? JSON.stringify(metadata) : null, req.params.id]
+      [
+        record_type, state_code, district, taluk, village,
+        survey_number, sub_division, extent_acres, extent_hectares,
+        land_classification, current_holder_name, cultivation_details,
+        pattadar_passbook_number, last_verified_on, document_id, notes,
+        req.params.id,
+      ]
     );
 
     if (result.rows.length === 0) {

@@ -13,11 +13,11 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status, type } = req.query;
 
     let sql = `
-      SELECT st.*, p.name AS property_name,
-             u.first_name AS creator_first_name, u.last_name AS creator_last_name
+      SELECT st.*, p.title AS property_title,
+             u.first_name AS opener_first_name, u.last_name AS opener_last_name
       FROM support_tickets st
       LEFT JOIN properties p ON p.id = st.property_id
-      LEFT JOIN app_users u ON u.id = st.created_by
+      LEFT JOIN app_users u ON u.id = st.opened_by
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -63,11 +63,11 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT st.*, p.name AS property_name,
-              u.first_name AS creator_first_name, u.last_name AS creator_last_name
+      `SELECT st.*, p.title AS property_title,
+              u.first_name AS opener_first_name, u.last_name AS opener_last_name
        FROM support_tickets st
        LEFT JOIN properties p ON p.id = st.property_id
-       LEFT JOIN app_users u ON u.id = st.created_by
+       LEFT JOIN app_users u ON u.id = st.opened_by
        WHERE st.id = $1`,
       [req.params.id]
     );
@@ -98,7 +98,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO support_tickets (property_id, ticket_type, subject, description, priority, status, assigned_to, created_by)
+      `INSERT INTO support_tickets (property_id, ticket_type, subject, description, priority, status, assigned_to, opened_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
@@ -119,7 +119,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
       ticket_type, subject, description, priority,
-      status, assigned_to, resolved_at, resolution_notes,
+      status, assigned_to, resolved_at,
     } = req.body;
 
     const result = await query(
@@ -131,11 +131,10 @@ router.put('/:id', async (req: Request, res: Response) => {
            status = COALESCE($5, status),
            assigned_to = COALESCE($6, assigned_to),
            resolved_at = COALESCE($7, resolved_at),
-           resolution_notes = COALESCE($8, resolution_notes),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $8
        RETURNING *`,
-      [ticket_type, subject, description, priority, status, assigned_to, resolved_at, resolution_notes, req.params.id]
+      [ticket_type, subject, description, priority, status, assigned_to, resolved_at, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -178,7 +177,7 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT tm.*, u.first_name, u.last_name, u.email
        FROM ticket_messages tm
-       LEFT JOIN app_users u ON u.id = tm.sender_user_id
+       LEFT JOIN app_users u ON u.id = tm.sender_id
        WHERE tm.ticket_id = $1
        ORDER BY tm.created_at ASC
        LIMIT $2 OFFSET $3`,
@@ -195,18 +194,18 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
 // POST /:id/messages - send a message on a ticket
 router.post('/:id/messages', async (req: Request, res: Response) => {
   try {
-    const { content, is_internal } = req.body;
+    const { message_body, is_internal } = req.body;
 
-    if (!content) {
-      res.status(400).json({ error: 'content is required' });
+    if (!message_body) {
+      res.status(400).json({ error: 'message_body is required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO ticket_messages (ticket_id, sender_user_id, content, is_internal)
+      `INSERT INTO ticket_messages (ticket_id, sender_id, message_body, is_internal)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [req.params.id, req.user!.id, content, is_internal || false]
+      [req.params.id, req.user!.id, message_body, is_internal || false]
     );
 
     res.status(201).json(result.rows[0]);

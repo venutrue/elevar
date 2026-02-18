@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, type } = req.query;
 
     let sql = `
-      SELECT po.*, p.name AS property_name
+      SELECT po.*, p.title AS property_title
       FROM property_obligations po
       LEFT JOIN properties p ON p.id = po.property_id
       WHERE 1=1
@@ -35,7 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     params.push(limit);
-    sql += ` ORDER BY po.due_date ASC LIMIT $${params.length}`;
+    sql += ` ORDER BY po.effective_from ASC LIMIT $${params.length}`;
     params.push(offset);
     sql += ` OFFSET $${params.length}`;
 
@@ -57,7 +57,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT po.*, p.name AS property_name
+      `SELECT po.*, p.title AS property_title
        FROM property_obligations po
        LEFT JOIN properties p ON p.id = po.property_id
        WHERE po.id = $1`,
@@ -80,23 +80,25 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, obligation_type, title, description,
-      amount, due_date, recurring, frequency, status,
+      property_id, obligation_type, description,
+      amount, currency_code, billing_frequency,
+      effective_from, effective_until, is_active,
     } = req.body;
 
-    if (!property_id || !obligation_type || !title) {
-      res.status(400).json({ error: 'property_id, obligation_type, and title are required' });
+    if (!property_id || !obligation_type) {
+      res.status(400).json({ error: 'property_id and obligation_type are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO property_obligations (property_id, obligation_type, title, description, amount, due_date, recurring, frequency, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO property_obligations (property_id, obligation_type, description, amount, currency_code, billing_frequency, effective_from, effective_until, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
-        property_id, obligation_type, title, description || null,
-        amount || null, due_date || null, recurring || false,
-        frequency || null, status || 'active', req.user!.id,
+        property_id, obligation_type, description || null,
+        amount || null, currency_code || 'INR', billing_frequency || null,
+        effective_from || null, effective_until || null,
+        is_active !== undefined ? is_active : true,
       ]
     );
 
@@ -111,24 +113,25 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      obligation_type, title, description, amount,
-      due_date, recurring, frequency, status,
+      obligation_type, description, amount,
+      currency_code, billing_frequency,
+      effective_from, effective_until, is_active,
     } = req.body;
 
     const result = await query(
       `UPDATE property_obligations
        SET obligation_type = COALESCE($1, obligation_type),
-           title = COALESCE($2, title),
-           description = COALESCE($3, description),
-           amount = COALESCE($4, amount),
-           due_date = COALESCE($5, due_date),
-           recurring = COALESCE($6, recurring),
-           frequency = COALESCE($7, frequency),
-           status = COALESCE($8, status),
+           description = COALESCE($2, description),
+           amount = COALESCE($3, amount),
+           currency_code = COALESCE($4, currency_code),
+           billing_frequency = COALESCE($5, billing_frequency),
+           effective_from = COALESCE($6, effective_from),
+           effective_until = COALESCE($7, effective_until),
+           is_active = COALESCE($8, is_active),
            updated_at = NOW()
        WHERE id = $9
        RETURNING *`,
-      [obligation_type, title, description, amount, due_date, recurring, frequency, status, req.params.id]
+      [obligation_type, description, amount, currency_code, billing_frequency, effective_from, effective_until, is_active, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -171,7 +174,7 @@ router.get('/:id/payments', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT * FROM obligation_payments
        WHERE obligation_id = $1
-       ORDER BY payment_date DESC
+       ORDER BY period_start DESC
        LIMIT $2 OFFSET $3`,
       [req.params.id, limit, offset]
     );
@@ -186,22 +189,25 @@ router.get('/:id/payments', async (req: Request, res: Response) => {
 // POST /:id/payments - create obligation payment
 router.post('/:id/payments', async (req: Request, res: Response) => {
   try {
-    const { amount, payment_date, payment_method, reference_number, notes } = req.body;
+    const {
+      period_start, period_end, amount_due, amount_paid,
+      payment_status, paid_on, reference_number,
+    } = req.body;
 
-    if (!amount) {
-      res.status(400).json({ error: 'amount is required' });
+    if (!amount_due) {
+      res.status(400).json({ error: 'amount_due is required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO obligation_payments (obligation_id, amount, payment_date, payment_method, reference_number, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO obligation_payments (obligation_id, period_start, period_end, amount_due, amount_paid, payment_status, paid_on, reference_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        req.params.id, amount,
-        payment_date || new Date().toISOString().split('T')[0],
-        payment_method || null, reference_number || null,
-        notes || null, req.user!.id,
+        req.params.id, period_start || null, period_end || null,
+        amount_due, amount_paid || null,
+        payment_status || 'due', paid_on || null,
+        reference_number || null,
       ]
     );
 

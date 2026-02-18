@@ -13,13 +13,13 @@ router.get('/', async (req: Request, res: Response) => {
 
     const result = await query(
       `SELECT cr.*,
-              (SELECT content FROM chat_messages cm WHERE cm.room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) AS last_message,
-              (SELECT created_at FROM chat_messages cm WHERE cm.room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) AS last_message_at
+              (SELECT message_body FROM chat_messages cm WHERE cm.chat_room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) AS last_message,
+              (SELECT created_at FROM chat_messages cm WHERE cm.chat_room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) AS last_message_at
        FROM chat_rooms cr
-       JOIN chat_room_participants crp ON crp.room_id = cr.id
+       JOIN chat_room_participants crp ON crp.chat_room_id = cr.id
        WHERE crp.user_id = $1
        ORDER BY COALESCE(
-         (SELECT created_at FROM chat_messages cm WHERE cm.room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1),
+         (SELECT created_at FROM chat_messages cm WHERE cm.chat_room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1),
          cr.created_at
        ) DESC
        LIMIT $2 OFFSET $3`,
@@ -39,7 +39,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT cr.*
        FROM chat_rooms cr
-       JOIN chat_room_participants crp ON crp.room_id = cr.id
+       JOIN chat_room_participants crp ON crp.chat_room_id = cr.id
        WHERE cr.id = $1 AND crp.user_id = $2`,
       [req.params.id, req.user!.id]
     );
@@ -54,7 +54,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       `SELECT crp.*, u.first_name, u.last_name, u.email
        FROM chat_room_participants crp
        JOIN app_users u ON u.id = crp.user_id
-       WHERE crp.room_id = $1`,
+       WHERE crp.chat_room_id = $1`,
       [req.params.id]
     );
 
@@ -71,20 +71,20 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST / - create chat room and add creator as participant
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, room_type, participant_ids } = req.body;
+    const { subject, room_type, property_id, participant_ids } = req.body;
 
     const roomResult = await query(
-      `INSERT INTO chat_rooms (name, room_type, created_by)
-       VALUES ($1, $2, $3)
+      `INSERT INTO chat_rooms (property_id, room_type, subject, status, created_by)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [name || null, room_type || 'direct', req.user!.id]
+      [property_id || null, room_type || 'general', subject || null, 'active', req.user!.id]
     );
 
     const room = roomResult.rows[0];
 
     // Add creator as participant
     await query(
-      `INSERT INTO chat_room_participants (room_id, user_id)
+      `INSERT INTO chat_room_participants (chat_room_id, user_id)
        VALUES ($1, $2)`,
       [room.id, req.user!.id]
     );
@@ -94,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
       for (const userId of participant_ids) {
         if (userId !== req.user!.id) {
           await query(
-            `INSERT INTO chat_room_participants (room_id, user_id)
+            `INSERT INTO chat_room_participants (chat_room_id, user_id)
              VALUES ($1, $2)
              ON CONFLICT DO NOTHING`,
             [room.id, userId]
@@ -113,16 +113,17 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT /:id - update chat room
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { name, room_type } = req.body;
+    const { subject, room_type, status } = req.body;
 
     const result = await query(
       `UPDATE chat_rooms
-       SET name = COALESCE($1, name),
+       SET subject = COALESCE($1, subject),
            room_type = COALESCE($2, room_type),
+           status = COALESCE($3, status),
            updated_at = NOW()
-       WHERE id = $3
+       WHERE id = $4
        RETURNING *`,
-      [name, room_type, req.params.id]
+      [subject, room_type, status, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -163,10 +164,10 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
     const { limit, offset } = paginate(req);
 
     const result = await query(
-      `SELECT cm.*, u.first_name, u.last_name, u.email, u.avatar_url
+      `SELECT cm.*, u.first_name, u.last_name, u.email
        FROM chat_messages cm
-       JOIN app_users u ON u.id = cm.sender_user_id
-       WHERE cm.room_id = $1
+       JOIN app_users u ON u.id = cm.sender_id
+       WHERE cm.chat_room_id = $1
        ORDER BY cm.created_at ASC
        LIMIT $2 OFFSET $3`,
       [req.params.id, limit, offset]
@@ -182,16 +183,16 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
 // POST /:id/messages - send a message in a room
 router.post('/:id/messages', async (req: Request, res: Response) => {
   try {
-    const { content, message_type, metadata } = req.body;
+    const { message_body, message_type, attachment_document_id } = req.body;
 
-    if (!content) {
-      res.status(400).json({ error: 'content is required' });
+    if (!message_body) {
+      res.status(400).json({ error: 'message_body is required' });
       return;
     }
 
     // Verify user is a participant
     const participant = await query(
-      'SELECT id FROM chat_room_participants WHERE room_id = $1 AND user_id = $2',
+      'SELECT id FROM chat_room_participants WHERE chat_room_id = $1 AND user_id = $2',
       [req.params.id, req.user!.id]
     );
 
@@ -201,10 +202,10 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO chat_messages (room_id, sender_user_id, content, message_type, metadata)
+      `INSERT INTO chat_messages (chat_room_id, sender_id, message_body, message_type, attachment_document_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [req.params.id, req.user!.id, content, message_type || 'text', metadata ? JSON.stringify(metadata) : null]
+      [req.params.id, req.user!.id, message_body, message_type || 'text', attachment_document_id || null]
     );
 
     res.status(201).json(result.rows[0]);

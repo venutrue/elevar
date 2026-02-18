@@ -12,11 +12,11 @@ router.get('/events', async (req: Request, res: Response) => {
     const { limit, offset } = paginate(req);
 
     const result = await query(
-      `SELECT ee.*, er.name AS rule_name, er.entity_type, er.escalation_action,
-              u.first_name AS triggered_by_first_name, u.last_name AS triggered_by_last_name
+      `SELECT ee.*, er.rule_name, er.entity_type,
+              u.first_name AS escalated_to_first_name, u.last_name AS escalated_to_last_name
        FROM escalation_events ee
        LEFT JOIN escalation_rules er ON er.id = ee.rule_id
-       LEFT JOIN app_users u ON u.id = ee.triggered_by
+       LEFT JOIN app_users u ON u.id = ee.escalated_to
        ORDER BY ee.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -32,7 +32,7 @@ router.get('/events', async (req: Request, res: Response) => {
 // POST /events - create escalation event
 router.post('/events', async (req: Request, res: Response) => {
   try {
-    const { rule_id, entity_type, entity_id, description, metadata } = req.body;
+    const { rule_id, entity_type, entity_id, escalated_to, resolution_notes } = req.body;
 
     if (!entity_type || !entity_id) {
       res.status(400).json({ error: 'entity_type and entity_id are required' });
@@ -40,10 +40,10 @@ router.post('/events', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO escalation_events (rule_id, entity_type, entity_id, description, metadata, triggered_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO escalation_events (rule_id, entity_type, entity_id, escalated_to, resolution_notes)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [rule_id || null, entity_type, entity_id, description || null, metadata ? JSON.stringify(metadata) : null, req.user!.id]
+      [rule_id || null, entity_type, entity_id, escalated_to || null, resolution_notes || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -96,28 +96,25 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      name, description, entity_type, condition_field,
-      condition_operator, condition_value, escalation_action,
-      notify_roles, notify_users, is_active, threshold_days,
+      rule_name, entity_type, trigger_condition, priority_filter,
+      breach_threshold_minutes, escalate_to_role, notify_channels, is_active,
     } = req.body;
 
-    if (!name || !entity_type || !escalation_action) {
-      res.status(400).json({ error: 'name, entity_type, and escalation_action are required' });
+    if (!rule_name || !entity_type || !escalate_to_role) {
+      res.status(400).json({ error: 'rule_name, entity_type, and escalate_to_role are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO escalation_rules (name, description, entity_type, condition_field, condition_operator, condition_value, escalation_action, notify_roles, notify_users, is_active, threshold_days, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO escalation_rules (rule_name, entity_type, trigger_condition, priority_filter, breach_threshold_minutes, escalate_to_role, notify_channels, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        name, description || null, entity_type,
-        condition_field || null, condition_operator || null,
-        condition_value || null, escalation_action,
-        notify_roles ? JSON.stringify(notify_roles) : null,
-        notify_users ? JSON.stringify(notify_users) : null,
+        rule_name, entity_type,
+        trigger_condition || null, priority_filter || null,
+        breach_threshold_minutes || null, escalate_to_role,
+        notify_channels ? JSON.stringify(notify_channels) : null,
         is_active !== undefined ? is_active : true,
-        threshold_days || null, req.user!.id,
       ]
     );
 
@@ -132,33 +129,28 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      name, description, entity_type, condition_field,
-      condition_operator, condition_value, escalation_action,
-      notify_roles, notify_users, is_active, threshold_days,
+      rule_name, entity_type, trigger_condition, priority_filter,
+      breach_threshold_minutes, escalate_to_role, notify_channels, is_active,
     } = req.body;
 
     const result = await query(
       `UPDATE escalation_rules
-       SET name = COALESCE($1, name),
-           description = COALESCE($2, description),
-           entity_type = COALESCE($3, entity_type),
-           condition_field = COALESCE($4, condition_field),
-           condition_operator = COALESCE($5, condition_operator),
-           condition_value = COALESCE($6, condition_value),
-           escalation_action = COALESCE($7, escalation_action),
-           notify_roles = COALESCE($8, notify_roles),
-           notify_users = COALESCE($9, notify_users),
-           is_active = COALESCE($10, is_active),
-           threshold_days = COALESCE($11, threshold_days),
+       SET rule_name = COALESCE($1, rule_name),
+           entity_type = COALESCE($2, entity_type),
+           trigger_condition = COALESCE($3, trigger_condition),
+           priority_filter = COALESCE($4, priority_filter),
+           breach_threshold_minutes = COALESCE($5, breach_threshold_minutes),
+           escalate_to_role = COALESCE($6, escalate_to_role),
+           notify_channels = COALESCE($7, notify_channels),
+           is_active = COALESCE($8, is_active),
            updated_at = NOW()
-       WHERE id = $12
+       WHERE id = $9
        RETURNING *`,
       [
-        name, description, entity_type, condition_field,
-        condition_operator, condition_value, escalation_action,
-        notify_roles ? JSON.stringify(notify_roles) : null,
-        notify_users ? JSON.stringify(notify_users) : null,
-        is_active, threshold_days, req.params.id,
+        rule_name, entity_type, trigger_condition, priority_filter,
+        breach_threshold_minutes, escalate_to_role,
+        notify_channels ? JSON.stringify(notify_channels) : null,
+        is_active, req.params.id,
       ]
     );
 

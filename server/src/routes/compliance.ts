@@ -28,18 +28,25 @@ router.get('/audit-cycles', async (req: Request, res: Response) => {
 // POST /audit-cycles - create audit cycle
 router.post('/audit-cycles', async (req: Request, res: Response) => {
   try {
-    const { name, start_date, end_date, status, description } = req.body;
+    const {
+      property_id, audit_year, audit_label, property_type_checklist,
+      status, scheduled_start, scheduled_end, assigned_to, notes,
+    } = req.body;
 
-    if (!name || !start_date || !end_date) {
-      res.status(400).json({ error: 'name, start_date, and end_date are required' });
+    if (!property_id || !audit_year || !audit_label) {
+      res.status(400).json({ error: 'property_id, audit_year, and audit_label are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO audit_cycles (name, start_date, end_date, status, description, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO audit_cycles (property_id, audit_year, audit_label, property_type_checklist, status, scheduled_start, scheduled_end, assigned_to, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [name, start_date, end_date, status || 'planned', description || null, req.user!.id]
+      [
+        property_id, audit_year, audit_label, property_type_checklist || null,
+        status || 'scheduled', scheduled_start || null, scheduled_end || null,
+        assigned_to || null, notes || null,
+      ]
     );
 
     res.status(201).json(result.rows[0]);
@@ -76,7 +83,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status, check_type } = req.query;
 
     let sql = `
-      SELECT cc.*, p.name AS property_name
+      SELECT cc.*, p.title AS property_title
       FROM compliance_checks cc
       LEFT JOIN properties p ON p.id = cc.property_id
       WHERE 1=1
@@ -124,7 +131,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT cc.*, p.name AS property_name
+      `SELECT cc.*, p.title AS property_title
        FROM compliance_checks cc
        LEFT JOIN properties p ON p.id = cc.property_id
        WHERE cc.id = $1`,
@@ -147,23 +154,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, check_type, title, description, status,
-      due_date, completed_date, assigned_to, audit_cycle_id,
+      property_id, check_type, status,
+      due_date, completed_at, assigned_to, notes, audit_cycle_id,
     } = req.body;
 
-    if (!property_id || !check_type || !title) {
-      res.status(400).json({ error: 'property_id, check_type, and title are required' });
+    if (!property_id || !check_type) {
+      res.status(400).json({ error: 'property_id and check_type are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO compliance_checks (property_id, check_type, title, description, status, due_date, completed_date, assigned_to, audit_cycle_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO compliance_checks (property_id, check_type, status, due_date, completed_at, assigned_to, notes, audit_cycle_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        property_id, check_type, title, description || null,
-        status || 'pending', due_date || null, completed_date || null,
-        assigned_to || null, audit_cycle_id || null, req.user!.id,
+        property_id, check_type, status || 'pending',
+        due_date || null, completed_at || null,
+        assigned_to || null, notes || null, audit_cycle_id || null,
       ]
     );
 
@@ -178,25 +185,23 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      check_type, title, description, status,
-      due_date, completed_date, assigned_to, findings, audit_cycle_id,
+      check_type, status, due_date,
+      completed_at, assigned_to, notes, audit_cycle_id,
     } = req.body;
 
     const result = await query(
       `UPDATE compliance_checks
        SET check_type = COALESCE($1, check_type),
-           title = COALESCE($2, title),
-           description = COALESCE($3, description),
-           status = COALESCE($4, status),
-           due_date = COALESCE($5, due_date),
-           completed_date = COALESCE($6, completed_date),
-           assigned_to = COALESCE($7, assigned_to),
-           findings = COALESCE($8, findings),
-           audit_cycle_id = COALESCE($9, audit_cycle_id),
+           status = COALESCE($2, status),
+           due_date = COALESCE($3, due_date),
+           completed_at = COALESCE($4, completed_at),
+           assigned_to = COALESCE($5, assigned_to),
+           notes = COALESCE($6, notes),
+           audit_cycle_id = COALESCE($7, audit_cycle_id),
            updated_at = NOW()
-       WHERE id = $10
+       WHERE id = $8
        RETURNING *`,
-      [check_type, title, description, status, due_date, completed_date, assigned_to, findings, audit_cycle_id, req.params.id]
+      [check_type, status, due_date, completed_at, assigned_to, notes, audit_cycle_id, req.params.id]
     );
 
     if (result.rows.length === 0) {

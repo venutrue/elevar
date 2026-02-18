@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status } = req.query;
 
     let sql = `
-      SELECT cp.*, p.name AS property_name
+      SELECT cp.*, p.title AS property_title
       FROM construction_projects cp
       LEFT JOIN properties p ON p.id = cp.property_id
       WHERE 1=1
@@ -57,7 +57,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT cp.*, p.name AS property_name
+      `SELECT cp.*, p.title AS property_title
        FROM construction_projects cp
        LEFT JOIN properties p ON p.id = cp.property_id
        WHERE cp.id = $1`,
@@ -80,8 +80,9 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, title, description, status, contractor,
-      budget, start_date, expected_end_date, actual_end_date,
+      property_id, project_type, title, description, status,
+      contractor_name, contractor_phone, estimated_budget, actual_spend,
+      currency_code, planned_start, planned_end, actual_start, actual_end,
     } = req.body;
 
     if (!property_id || !title) {
@@ -90,13 +91,16 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO construction_projects (property_id, title, description, status, contractor, budget, start_date, expected_end_date, actual_end_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO construction_projects (property_id, managed_by, project_type, title, description, status, contractor_name, contractor_phone, estimated_budget, actual_spend, currency_code, planned_start, planned_end, actual_start, actual_end)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
-        property_id, title, description || null, status || 'planned',
-        contractor || null, budget || null, start_date || null,
-        expected_end_date || null, actual_end_date || null, req.user!.id,
+        property_id, req.user!.id, project_type || null, title,
+        description || null, status || 'planned',
+        contractor_name || null, contractor_phone || null,
+        estimated_budget || null, actual_spend || null,
+        currency_code || 'INR', planned_start || null,
+        planned_end || null, actual_start || null, actual_end || null,
       ]
     );
 
@@ -111,28 +115,35 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      title, description, status, contractor, budget,
-      start_date, expected_end_date, actual_end_date, progress_percentage,
+      project_type, title, description, status,
+      contractor_name, contractor_phone, estimated_budget,
+      actual_spend, currency_code, planned_start, planned_end,
+      actual_start, actual_end,
     } = req.body;
 
     const result = await query(
       `UPDATE construction_projects
-       SET title = COALESCE($1, title),
-           description = COALESCE($2, description),
-           status = COALESCE($3, status),
-           contractor = COALESCE($4, contractor),
-           budget = COALESCE($5, budget),
-           start_date = COALESCE($6, start_date),
-           expected_end_date = COALESCE($7, expected_end_date),
-           actual_end_date = COALESCE($8, actual_end_date),
-           progress_percentage = COALESCE($9, progress_percentage),
+       SET project_type = COALESCE($1, project_type),
+           title = COALESCE($2, title),
+           description = COALESCE($3, description),
+           status = COALESCE($4, status),
+           contractor_name = COALESCE($5, contractor_name),
+           contractor_phone = COALESCE($6, contractor_phone),
+           estimated_budget = COALESCE($7, estimated_budget),
+           actual_spend = COALESCE($8, actual_spend),
+           currency_code = COALESCE($9, currency_code),
+           planned_start = COALESCE($10, planned_start),
+           planned_end = COALESCE($11, planned_end),
+           actual_start = COALESCE($12, actual_start),
+           actual_end = COALESCE($13, actual_end),
            updated_at = NOW()
-       WHERE id = $10
+       WHERE id = $14
        RETURNING *`,
       [
-        title, description, status, contractor, budget,
-        start_date, expected_end_date, actual_end_date, progress_percentage,
-        req.params.id,
+        project_type, title, description, status,
+        contractor_name, contractor_phone, estimated_budget,
+        actual_spend, currency_code, planned_start, planned_end,
+        actual_start, actual_end, req.params.id,
       ]
     );
 
@@ -174,7 +185,7 @@ router.get('/:id/milestones', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT * FROM construction_milestones
        WHERE project_id = $1
-       ORDER BY due_date ASC`,
+       ORDER BY sequence_order ASC`,
       [req.params.id]
     );
 
@@ -188,7 +199,7 @@ router.get('/:id/milestones', async (req: Request, res: Response) => {
 // POST /:id/milestones - create milestone
 router.post('/:id/milestones', async (req: Request, res: Response) => {
   try {
-    const { title, description, due_date, status, completed_date } = req.body;
+    const { title, description, sequence_order, due_date, status, completed_at } = req.body;
 
     if (!title) {
       res.status(400).json({ error: 'title is required' });
@@ -196,10 +207,10 @@ router.post('/:id/milestones', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `INSERT INTO construction_milestones (project_id, title, description, due_date, status, completed_date)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO construction_milestones (project_id, title, description, sequence_order, due_date, status, completed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.params.id, title, description || null, due_date || null, status || 'pending', completed_date || null]
+      [req.params.id, title, description || null, sequence_order || 0, due_date || null, status || 'pending', completed_at || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -212,19 +223,20 @@ router.post('/:id/milestones', async (req: Request, res: Response) => {
 // PUT /milestones/:milestoneId - update milestone
 router.put('/milestones/:milestoneId', async (req: Request, res: Response) => {
   try {
-    const { title, description, due_date, status, completed_date } = req.body;
+    const { title, description, sequence_order, due_date, status, completed_at } = req.body;
 
     const result = await query(
       `UPDATE construction_milestones
        SET title = COALESCE($1, title),
            description = COALESCE($2, description),
-           due_date = COALESCE($3, due_date),
-           status = COALESCE($4, status),
-           completed_date = COALESCE($5, completed_date),
+           sequence_order = COALESCE($3, sequence_order),
+           due_date = COALESCE($4, due_date),
+           status = COALESCE($5, status),
+           completed_at = COALESCE($6, completed_at),
            updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $7
        RETURNING *`,
-      [title, description, due_date, status, completed_date, req.params.milestoneId]
+      [title, description, sequence_order, due_date, status, completed_at, req.params.milestoneId]
     );
 
     if (result.rows.length === 0) {

@@ -17,14 +17,14 @@ router.get('/summary', async (req: Request, res: Response) => {
     }
 
     const result = await query(
-      `SELECT category,
+      `SELECT expense_category,
               COUNT(*) AS count,
               SUM(amount) AS total_amount,
               SUM(CASE WHEN payment_status = 'paid' THEN amount ELSE 0 END) AS paid_amount,
               SUM(CASE WHEN payment_status = 'pending' THEN amount ELSE 0 END) AS pending_amount
        FROM property_expenses
        WHERE property_id = $1
-       GROUP BY category
+       GROUP BY expense_category
        ORDER BY total_amount DESC`,
       [property_id]
     );
@@ -40,10 +40,10 @@ router.get('/summary', async (req: Request, res: Response) => {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { limit, offset } = paginate(req);
-    const { property_id, category, payment_status } = req.query;
+    const { property_id, expense_category, payment_status } = req.query;
 
     let sql = `
-      SELECT pe.*, p.name AS property_name
+      SELECT pe.*, p.title AS property_title
       FROM property_expenses pe
       LEFT JOIN properties p ON p.id = pe.property_id
       WHERE 1=1
@@ -54,9 +54,9 @@ router.get('/', async (req: Request, res: Response) => {
       params.push(property_id);
       sql += ` AND pe.property_id = $${params.length}`;
     }
-    if (category) {
-      params.push(category);
-      sql += ` AND pe.category = $${params.length}`;
+    if (expense_category) {
+      params.push(expense_category);
+      sql += ` AND pe.expense_category = $${params.length}`;
     }
     if (payment_status) {
       params.push(payment_status);
@@ -91,7 +91,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT pe.*, p.name AS property_name
+      `SELECT pe.*, p.title AS property_title
        FROM property_expenses pe
        LEFT JOIN properties p ON p.id = pe.property_id
        WHERE pe.id = $1`,
@@ -114,24 +114,29 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, category, description, amount,
-      expense_date, payment_status, vendor, receipt_url, notes,
+      property_id, expense_category, description, amount, currency_code,
+      expense_date, due_date, payment_status, vendor_name,
+      receipt_document_id, reference_number, is_recurring,
+      recurrence_interval, notes,
     } = req.body;
 
-    if (!property_id || !amount || !category) {
-      res.status(400).json({ error: 'property_id, category, and amount are required' });
+    if (!property_id || !amount || !expense_category) {
+      res.status(400).json({ error: 'property_id, expense_category, and amount are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO property_expenses (property_id, category, description, amount, expense_date, payment_status, vendor, receipt_url, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO property_expenses (property_id, recorded_by, expense_category, description, amount, currency_code, expense_date, due_date, payment_status, vendor_name, receipt_document_id, reference_number, is_recurring, recurrence_interval, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
-        property_id, category, description || null, amount,
+        property_id, req.user!.id, expense_category, description || null, amount,
+        currency_code || 'INR',
         expense_date || new Date().toISOString().split('T')[0],
-        payment_status || 'pending', vendor || null, receipt_url || null,
-        notes || null, req.user!.id,
+        due_date || null, payment_status || 'pending',
+        vendor_name || null, receipt_document_id || null,
+        reference_number || null, is_recurring || false,
+        recurrence_interval || null, notes || null,
       ]
     );
 
@@ -146,24 +151,36 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      category, description, amount, expense_date,
-      payment_status, vendor, receipt_url, notes,
+      expense_category, description, amount, currency_code,
+      expense_date, due_date, payment_status, vendor_name,
+      receipt_document_id, reference_number, is_recurring,
+      recurrence_interval, notes,
     } = req.body;
 
     const result = await query(
       `UPDATE property_expenses
-       SET category = COALESCE($1, category),
+       SET expense_category = COALESCE($1, expense_category),
            description = COALESCE($2, description),
            amount = COALESCE($3, amount),
-           expense_date = COALESCE($4, expense_date),
-           payment_status = COALESCE($5, payment_status),
-           vendor = COALESCE($6, vendor),
-           receipt_url = COALESCE($7, receipt_url),
-           notes = COALESCE($8, notes),
+           currency_code = COALESCE($4, currency_code),
+           expense_date = COALESCE($5, expense_date),
+           due_date = COALESCE($6, due_date),
+           payment_status = COALESCE($7, payment_status),
+           vendor_name = COALESCE($8, vendor_name),
+           receipt_document_id = COALESCE($9, receipt_document_id),
+           reference_number = COALESCE($10, reference_number),
+           is_recurring = COALESCE($11, is_recurring),
+           recurrence_interval = COALESCE($12, recurrence_interval),
+           notes = COALESCE($13, notes),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $14
        RETURNING *`,
-      [category, description, amount, expense_date, payment_status, vendor, receipt_url, notes, req.params.id]
+      [
+        expense_category, description, amount, currency_code,
+        expense_date, due_date, payment_status, vendor_name,
+        receipt_document_id, reference_number, is_recurring,
+        recurrence_interval, notes, req.params.id,
+      ]
     );
 
     if (result.rows.length === 0) {

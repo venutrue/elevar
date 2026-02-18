@@ -13,13 +13,13 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status } = req.query;
 
     let sql = `
-      SELECT poa.*, p.name AS property_name,
-             grantor.first_name AS grantor_first_name, grantor.last_name AS grantor_last_name,
-             grantee.first_name AS grantee_first_name, grantee.last_name AS grantee_last_name
+      SELECT poa.*, p.title AS property_title,
+             owner.first_name AS owner_first_name, owner.last_name AS owner_last_name,
+             attorney.first_name AS attorney_first_name, attorney.last_name AS attorney_last_name
       FROM powers_of_attorney poa
       LEFT JOIN properties p ON p.id = poa.property_id
-      LEFT JOIN app_users grantor ON grantor.id = poa.grantor_user_id
-      LEFT JOIN app_users grantee ON grantee.id = poa.grantee_user_id
+      LEFT JOIN app_users owner ON owner.id = poa.owner_id
+      LEFT JOIN app_users attorney ON attorney.id = poa.attorney_holder_id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -61,13 +61,13 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT poa.*, p.name AS property_name,
-              grantor.first_name AS grantor_first_name, grantor.last_name AS grantor_last_name,
-              grantee.first_name AS grantee_first_name, grantee.last_name AS grantee_last_name
+      `SELECT poa.*, p.title AS property_title,
+              owner.first_name AS owner_first_name, owner.last_name AS owner_last_name,
+              attorney.first_name AS attorney_first_name, attorney.last_name AS attorney_last_name
        FROM powers_of_attorney poa
        LEFT JOIN properties p ON p.id = poa.property_id
-       LEFT JOIN app_users grantor ON grantor.id = poa.grantor_user_id
-       LEFT JOIN app_users grantee ON grantee.id = poa.grantee_user_id
+       LEFT JOIN app_users owner ON owner.id = poa.owner_id
+       LEFT JOIN app_users attorney ON attorney.id = poa.attorney_holder_id
        WHERE poa.id = $1`,
       [req.params.id]
     );
@@ -88,25 +88,25 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, grantor_user_id, grantee_user_id, poa_type,
-      title, description, status, start_date, end_date,
-      notary_reference, document_url,
+      property_id, owner_id, attorney_holder_id, poa_scope,
+      registration_number, status, issued_on, valid_until,
+      revoked_on, revocation_reason,
     } = req.body;
 
-    if (!grantor_user_id || !grantee_user_id || !poa_type || !title) {
-      res.status(400).json({ error: 'grantor_user_id, grantee_user_id, poa_type, and title are required' });
+    if (!owner_id || !attorney_holder_id || !poa_scope) {
+      res.status(400).json({ error: 'owner_id, attorney_holder_id, and poa_scope are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO powers_of_attorney (property_id, grantor_user_id, grantee_user_id, poa_type, title, description, status, start_date, end_date, notary_reference, document_url, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO powers_of_attorney (property_id, owner_id, attorney_holder_id, poa_scope, registration_number, status, issued_on, valid_until, revoked_on, revocation_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
-        property_id || null, grantor_user_id, grantee_user_id, poa_type,
-        title, description || null, status || 'draft',
-        start_date || null, end_date || null,
-        notary_reference || null, document_url || null, req.user!.id,
+        property_id || null, owner_id, attorney_holder_id, poa_scope,
+        registration_number || null, status || 'draft',
+        issued_on || null, valid_until || null,
+        revoked_on || null, revocation_reason || null,
       ]
     );
 
@@ -121,24 +121,23 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      poa_type, title, description, status,
-      start_date, end_date, notary_reference, document_url,
+      poa_scope, registration_number, status,
+      issued_on, valid_until, revoked_on, revocation_reason,
     } = req.body;
 
     const result = await query(
       `UPDATE powers_of_attorney
-       SET poa_type = COALESCE($1, poa_type),
-           title = COALESCE($2, title),
-           description = COALESCE($3, description),
-           status = COALESCE($4, status),
-           start_date = COALESCE($5, start_date),
-           end_date = COALESCE($6, end_date),
-           notary_reference = COALESCE($7, notary_reference),
-           document_url = COALESCE($8, document_url),
+       SET poa_scope = COALESCE($1, poa_scope),
+           registration_number = COALESCE($2, registration_number),
+           status = COALESCE($3, status),
+           issued_on = COALESCE($4, issued_on),
+           valid_until = COALESCE($5, valid_until),
+           revoked_on = COALESCE($6, revoked_on),
+           revocation_reason = COALESCE($7, revocation_reason),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $8
        RETURNING *`,
-      [poa_type, title, description, status, start_date, end_date, notary_reference, document_url, req.params.id]
+      [poa_scope, registration_number, status, issued_on, valid_until, revoked_on, revocation_reason, req.params.id]
     );
 
     if (result.rows.length === 0) {

@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { property_id, status } = req.query;
 
     let sql = `
-      SELECT sh.*, p.name AS property_name
+      SELECT sh.*, p.title AS property_title
       FROM service_handovers sh
       LEFT JOIN properties p ON p.id = sh.property_id
       WHERE 1=1
@@ -57,7 +57,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT sh.*, p.name AS property_name
+      `SELECT sh.*, p.title AS property_title
        FROM service_handovers sh
        LEFT JOIN properties p ON p.id = sh.property_id
        WHERE sh.id = $1`,
@@ -80,22 +80,24 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
-      property_id, title, description, status,
-      handover_date, from_party, to_party,
+      property_id, subscription_id, handled_by, handover_type,
+      status, target_completion_date, notes, cancellation_reason,
     } = req.body;
 
-    if (!property_id || !title) {
-      res.status(400).json({ error: 'property_id and title are required' });
+    if (!property_id || !handover_type) {
+      res.status(400).json({ error: 'property_id and handover_type are required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO service_handovers (property_id, title, description, status, handover_date, from_party, to_party, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO service_handovers (property_id, subscription_id, initiated_by, handled_by, handover_type, status, target_completion_date, notes, cancellation_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
-        property_id, title, description || null, status || 'pending',
-        handover_date || null, from_party || null, to_party || null, req.user!.id,
+        property_id, subscription_id || null, req.user!.id,
+        handled_by || null, handover_type, status || 'initiated',
+        target_completion_date || null, notes || null,
+        cancellation_reason || null,
       ]
     );
 
@@ -110,24 +112,22 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const {
-      title, description, status, handover_date,
-      from_party, to_party, completed_date, notes,
+      status, handled_by, target_completion_date,
+      completed_at, notes, cancellation_reason,
     } = req.body;
 
     const result = await query(
       `UPDATE service_handovers
-       SET title = COALESCE($1, title),
-           description = COALESCE($2, description),
-           status = COALESCE($3, status),
-           handover_date = COALESCE($4, handover_date),
-           from_party = COALESCE($5, from_party),
-           to_party = COALESCE($6, to_party),
-           completed_date = COALESCE($7, completed_date),
-           notes = COALESCE($8, notes),
+       SET status = COALESCE($1, status),
+           handled_by = COALESCE($2, handled_by),
+           target_completion_date = COALESCE($3, target_completion_date),
+           completed_at = COALESCE($4, completed_at),
+           notes = COALESCE($5, notes),
+           cancellation_reason = COALESCE($6, cancellation_reason),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $7
        RETURNING *`,
-      [title, description, status, handover_date, from_party, to_party, completed_date, notes, req.params.id]
+      [status, handled_by, target_completion_date, completed_at, notes, cancellation_reason, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -182,18 +182,22 @@ router.get('/:id/items', async (req: Request, res: Response) => {
 // POST /:id/items - add item to handover
 router.post('/:id/items', async (req: Request, res: Response) => {
   try {
-    const { item_name, description, condition, quantity, notes } = req.body;
+    const { item_type, description, document_id, status, completed_at, completed_by, notes } = req.body;
 
-    if (!item_name) {
-      res.status(400).json({ error: 'item_name is required' });
+    if (!item_type) {
+      res.status(400).json({ error: 'item_type is required' });
       return;
     }
 
     const result = await query(
-      `INSERT INTO handover_items (handover_id, item_name, description, condition, quantity, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO handover_items (handover_id, item_type, description, document_id, status, completed_at, completed_by, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.params.id, item_name, description || null, condition || null, quantity || 1, notes || null]
+      [
+        req.params.id, item_type, description || null,
+        document_id || null, status || 'pending',
+        completed_at || null, completed_by || null, notes || null,
+      ]
     );
 
     res.status(201).json(result.rows[0]);
@@ -206,20 +210,21 @@ router.post('/:id/items', async (req: Request, res: Response) => {
 // PUT /items/:itemId - update handover item
 router.put('/items/:itemId', async (req: Request, res: Response) => {
   try {
-    const { item_name, description, condition, quantity, notes, status } = req.body;
+    const { item_type, description, document_id, status, completed_at, completed_by, notes } = req.body;
 
     const result = await query(
       `UPDATE handover_items
-       SET item_name = COALESCE($1, item_name),
+       SET item_type = COALESCE($1, item_type),
            description = COALESCE($2, description),
-           condition = COALESCE($3, condition),
-           quantity = COALESCE($4, quantity),
-           notes = COALESCE($5, notes),
-           status = COALESCE($6, status),
+           document_id = COALESCE($3, document_id),
+           status = COALESCE($4, status),
+           completed_at = COALESCE($5, completed_at),
+           completed_by = COALESCE($6, completed_by),
+           notes = COALESCE($7, notes),
            updated_at = NOW()
-       WHERE id = $7
+       WHERE id = $8
        RETURNING *`,
-      [item_name, description, condition, quantity, notes, status, req.params.itemId]
+      [item_type, description, document_id, status, completed_at, completed_by, notes, req.params.itemId]
     );
 
     if (result.rows.length === 0) {
