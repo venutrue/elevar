@@ -65,9 +65,23 @@ interface Property {
 
 // ---- Constants ----
 
-const OBLIGATION_TYPES = ['property_tax', 'insurance', 'hoa_fee', 'utility', 'mortgage', 'ground_rent', 'service_charge', 'other'];
-const FREQUENCIES = ['one_time', 'monthly', 'quarterly', 'semi_annually', 'annually'];
-const STATUSES = ['active', 'overdue', 'paid', 'suspended', 'cancelled'];
+const OBLIGATION_TYPE_OPTIONS = [
+  { value: 'property_tax', label: 'Property Tax' }, { value: 'insurance', label: 'Insurance' },
+  { value: 'hoa_fee', label: 'Hoa Fee' }, { value: 'utility', label: 'Utility' },
+  { value: 'mortgage', label: 'Mortgage' }, { value: 'ground_rent', label: 'Ground Rent' },
+  { value: 'service_charge', label: 'Service Charge' }, { value: 'other', label: 'Other' },
+];
+const OBLIGATION_TYPE_FILTER = [{ value: '', label: 'All Types' }, ...OBLIGATION_TYPE_OPTIONS];
+const FREQUENCY_OPTIONS = [
+  { value: 'one_time', label: 'One Time' }, { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' }, { value: 'semi_annually', label: 'Semi Annually' },
+  { value: 'annually', label: 'Annually' },
+];
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
+  { value: 'cheque', label: 'Cheque' }, { value: 'upi', label: 'UPI' },
+  { value: 'card', label: 'Card' }, { value: 'other', label: 'Other' },
+];
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
@@ -215,12 +229,7 @@ export default function Obligations() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <Select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-              <option value="">All Types</option>
-              {OBLIGATION_TYPES.map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none">{OBLIGATION_TYPE_FILTER.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
           </div>
         </CardContent>
       </Card>
@@ -315,12 +324,9 @@ export default function Obligations() {
             label="Property"
             value={form.property_id}
             onChange={(e) => setForm({ ...form, property_id: e.target.value })}
-          >
-            <option value="">Select a property</option>
-            {(properties?.data || []).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </Select>
+            options={(properties?.data || []).map((p) => ({ value: p.id, label: p.name }))}
+            placeholder="Select a property"
+          />
           <Input
             label="Title"
             placeholder="e.g., Annual property tax"
@@ -332,20 +338,14 @@ export default function Obligations() {
               label="Obligation Type"
               value={form.obligation_type}
               onChange={(e) => setForm({ ...form, obligation_type: e.target.value })}
-            >
-              {OBLIGATION_TYPES.map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
+              options={OBLIGATION_TYPE_OPTIONS}
+            />
             <Select
               label="Frequency"
               value={form.frequency}
               onChange={(e) => setForm({ ...form, frequency: e.target.value })}
-            >
-              {FREQUENCIES.map((f) => (
-                <option key={f} value={f}>{f.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
-              ))}
-            </Select>
+              options={FREQUENCY_OPTIONS}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -403,14 +403,8 @@ export default function Obligations() {
             label="Payment Method"
             value={paymentForm.payment_method}
             onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
-          >
-            <option value="bank_transfer">Bank Transfer</option>
-            <option value="cash">Cash</option>
-            <option value="cheque">Cheque</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-            <option value="other">Other</option>
-          </Select>
+            options={PAYMENT_METHOD_OPTIONS}
+          />
           <Input
             label="Reference Number (optional)"
             placeholder="Transaction reference"
